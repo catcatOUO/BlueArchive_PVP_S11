@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>戰術大賽對局數據分析系統</title>
+    <!-- 引入 SheetJS 庫用來解析 Google 雲端匯出的 Excel/CSV -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px; background: #f4f6f9; color: #333; }
+        h1 { color: #1a5fb4; text-align: center; }
+        .control-panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        input[type="text"] { width: 70%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        button { padding: 10px 20px; background: #1a5fb4; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #154e96; }
+        table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        th, td { padding: 12px 15px; text-align: center; border-bottom: 1px solid #ddd; }
+        th { background-color: #f1f3f5; cursor: pointer; user-select: none; font-weight: bold; }
+        th:hover { background-color: #e2e6ea; }
+        th::after { content: ' ⇅'; font-size: 0.8em; color: #888; }
+        tr:hover { background-color: #f8f9fa; }
+        .win-rate { font-weight: bold; color: #d93025; }
+        .side-tag { font-size: 0.85em; padding: 2px 6px; border-radius: 4px; margin-right: 5px; }
+        .atk { background-color: #e8f0fe; color: #1a73e8; }
+        .def { background-color: #fce8e6; color: #c5221f; }
+    </style>
+</head>
+<body>
+
+    <h1>🏆 戰術大賽隊伍合流與勝率分析</h1>
+
+    <div class="control-panel">
+        <label for="sheetUrl"><b>Google 試算表 CSV 連結：</b></label><br><br>
+        <input type="text" id="sheetUrl" placeholder="請輸入 Google 試算表的 CSV 發布連結...">
+        <button onclick="fetchAndProcessData()">載入並合流數據</button>
+    </div>
+
+    <table id="dataTable">
+        <thead>
+            <tr>
+                <th onclick="sortTable(0)">陣營</th>
+                <th onclick="sortTable(1)">1號位</th>
+                <th onclick="sortTable(2)">2號位</th>
+                <th onclick="sortTable(3)">3號位</th>
+                <th onclick="sortTable(4)">4號位</th>
+                <th onclick="sortTable(5)">SP 組合 (無視順序)</th>
+                <th onclick="sortTable(6)">總場數</th>
+                <th onclick="sortTable(7)">勝場</th>
+                <th onclick="sortTable(8)">勝率 (%)</th>
+            </tr>
+        </thead>
+        <tbody id="tableBody">
+            <tr><td colspan="9">請在上方輸入 CSV 連結並點擊載入...</td></tr>
+        </tbody>
+    </table>
+
+    <script>
+        let currentData = [];
+        let sortAscending = false;
+
+        // 1. 抓取雲端 CSV 資料並處理
+        async function fetchAndProcessData() {
+            const url = document.getElementById('sheetUrl').value.trim();
+            if (!url) { alert('請輸入有效的 CSV 連結！'); return; }
+
+            try {
+                const response = await fetch(url);
+                const data = await response.arrayBuffer();
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const rawRows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName]);
+
+                processAndAggregateData(rawRows);
+            } catch (error) {
+                alert('讀取失敗，請確認連結是否正確且已公開發布為 CSV！\n錯誤說明: ' + error);
+            }
+        }
+
+        // 2. 核心：隊伍合流與排序演算法
+        function processAndAggregateData(rows) {
+            const aggregatedMap = new Map();
+
+            rows.forEach(row => {
+                // 假設 CSV 欄位名稱為：陣營, Pos1, Pos2, Pos3, Pos4, SP1, SP2, 是否勝利(1/0)
+                const side = row['陣營'] || '攻擊';
+                const p1 = row['Pos1'] || '-';
+                const p2 = row['Pos2'] || '-';
+                const p3 = row['Pos3'] || '-';
+                const p4 = row['Pos4'] || '-';
+                
+                // SP 號位：無視順序，進行字典排序後結合
+                const sp1 = row['SP1'] || '-';
+                const sp2 = row['SP2'] || '-';
+                const sortedSP = [sp1, sp2].sort().join(' + ');
+
+                // 建立獨一無二的隊伍 Key
+                // 1~4 號位保持嚴格順序，SP 則使用排序後的字串
+                const teamKey = `${side}_${p1}_${p2}_${p3}_${p4}_[${sortedSP}]`;
+
+                const isWin = Number(row['是否勝利']) === 1 ? 1 : 0;
+
+                if (!aggregatedMap.has(teamKey)) {
+                    aggregatedMap.set(teamKey, {
+                        side: side,
+                        p1: p1, p2: p2, p3: p3, p4: p4,
+                        sp: sortedSP,
+                        totalGames: 0,
+                        wins: 0
+                    });
+                }
+
+                // 數據累加合流
+                const teamData = aggregatedMap.get(teamKey);
+                teamData.totalGames += 1;
+                teamData.wins += isWin;
+            });
+
+            // 轉為陣列並計算勝率
+            currentData = Array.from(aggregatedMap.values()).map(item => {
+                const winRate = ((item.wins / item.totalGames) * 100).toFixed(1);
+                return { ...item, winRate: parseFloat(winRate) };
+            });
+
+            renderTable(currentData);
+        }
+
+        // 3. 渲染表格到網頁
+        function renderTable(data) {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            data.forEach(item => {
+                const tr = document.createElement('tr');
+                const sideClass = item.side === '攻擊' ? 'atk' : 'def';
+                
+                tr.innerHTML = `
+                    <td><span class="side-tag ${sideClass}">${item.side}</span></td>
+                    <td>${item.p1}</td>
+                    <td>${item.p2}</td>
+                    <td>${item.p3}</td>
+                    <td>${item.p4}</td>
+                    <td><b>${item.sp}</b></td>
+                    <td>${item.totalGames}</td>
+                    <td>${item.wins}</td>
+                    <td class="win-rate">${item.winRate}%</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // 4. 表格點擊欄位排序功能
+        function sortTable(columnIndex) {
+            const keys = ['side', 'p1', 'p2', 'p3', 'p4', 'sp', 'totalGames', 'wins', 'winRate'];
+            const key = keys[columnIndex];
+
+            sortAscending = !sortAscending;
+
+            currentData.sort((a, b) => {
+                let valA = a[key];
+                let valB = b[key];
+
+                if (typeof valA === 'string') {
+                    return sortAscending ? valA.localeCompare(valB) : valB.localeCompare(valA);
+                } else {
+                    return sortAscending ? valA - valB : valB - valA;
+                }
+            });
+
+            renderTable(currentData);
+        }
+    </script>
+</body>
+</html>
