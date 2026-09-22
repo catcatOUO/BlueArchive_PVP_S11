@@ -4,30 +4,52 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>戰術大賽對局數據分析系統</title>
-    <!-- 引入 SheetJS 解析 CSV -->
+    <!-- 引入 SheetJS -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         * { box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; padding: 20px; background: #f4f6f9; color: #333; margin: 0; }
         h1 { color: #1a5fb4; text-align: center; margin-bottom: 8px; }
         .subtitle { text-align: center; color: #666; font-size: 0.9em; margin-bottom: 20px; }
-        .status-bar { background: white; padding: 12px 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
-        .status-info { font-size: 0.9em; color: #555; }
-        .refresh-btn { padding: 8px 16px; background: #1a5fb4; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.9em; transition: background 0.2s; }
-        .refresh-btn:hover { background: #154e96; }
+        
+        .panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 20px; }
+        .tab-buttons { display: flex; gap: 10px; margin-bottom: 15px; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .tab-btn { padding: 8px 16px; border: none; background: #e9ecef; color: #495057; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        .tab-btn.active { background: #1a5fb4; color: white; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; font-weight: bold; margin-bottom: 4px; font-size: 0.9em; }
+        .key-input-container { display: flex; gap: 8px; }
+        input[type="text"], input[type="password"], select { width: 100%; padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9em; }
+        
+        /* 圖片上傳區 */
+        .drop-zone { border: 2px dashed #1a5fb4; border-radius: 8px; padding: 20px; text-align: center; color: #666; cursor: pointer; background: #f8fafd; margin-bottom: 12px; }
+        .drop-zone:hover { background: #eef4fc; }
+        #previewImg { max-height: 150px; margin-top: 10px; border-radius: 4px; display: none; }
+
+        /* 12 號位輸入網格 */
+        .grid-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 15px; }
+        .grid-box { background: #f8f9fa; padding: 10px; border-radius: 6px; border: 1px solid #e9ecef; }
+        .grid-box.atk { border-top: 3px solid #1a73e8; }
+        .grid-box.def { border-top: 3px solid #c5221f; }
+        .grid-box h4 { margin: 0 0 8px 0; font-size: 0.85em; text-align: center; }
+
+        .action-btn { padding: 10px 20px; background: #1a5fb4; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; width: 100%; font-size: 1em; }
+        .action-btn:hover { background: #154e96; }
+        .save-key-btn { padding: 8px 12px; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap; font-weight: bold; }
+        .save-key-btn:hover { background: #218838; }
+
+        .status-bar { display: flex; justify-content: space-between; align-items: center; font-size: 0.9em; color: #555; }
         .table-container { overflow-x: auto; background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
         table { width: 100%; border-collapse: collapse; white-space: nowrap; font-size: 0.9em; }
         th, td { padding: 10px 12px; text-align: center; border-bottom: 1px solid #eef2f5; border-right: 1px solid #f0f4f8; }
         th { background-color: #f8f9fa; cursor: pointer; user-select: none; font-weight: bold; position: sticky; top: 0; z-index: 10; border-bottom: 2px solid #dee2e6; }
         th:hover { background-color: #e9ecef; }
-        th::after { content: ' ⇅'; font-size: 0.8em; color: #aaa; }
-        tr:hover { background-color: #f1f5f9; }
-        
-        /* 區分攻擊與防禦欄位色彩 */
         .atk-header { background-color: #e8f0fe !important; color: #1a73e8; }
         .def-header { background-color: #fce8e6 !important; color: #c5221f; }
         .stat-header { background-color: #e6f4ea !important; color: #137333; }
-        
         .sp-cell { font-size: 0.85em; color: #444; background-color: #fafafa; font-weight: 500; }
         .win-rate { font-weight: bold; color: #d93025; font-size: 1.05em; }
         .loading-text { font-size: 1.1em; color: #666; padding: 40px 0; }
@@ -36,15 +58,86 @@
 <body>
 
     <h1>🏆 戰術大賽對局合流與勝率分析</h1>
-    <div class="subtitle">自動抓取內嵌雲端試算表 ➔ 對局資料合流 ➔ 動態勝率計算</div>
+    <div class="subtitle">AI 截圖辨識 / 手動搜尋輸入 ➔ 寫入 Google 試算表 ➔ 自動合流統計</div>
 
-    <div class="status-bar">
-        <div class="status-info">
+    <!-- 學生選單數據庫 (用於 input autocomplete) -->
+    <datalist id="studentsDatalist"></datalist>
+
+    <!-- 輸入控制台 -->
+    <div class="panel">
+        <div class="tab-buttons">
+            <button class="tab-btn active" onclick="switchTab('aiTab')">🤖 AI 截圖辨識上傳</button>
+            <button class="tab-btn" onclick="switchTab('manualTab')">✍️ 手動搜尋/選擇輸入</button>
+        </div>
+
+        <!-- 分頁 1: AI 截圖辨識 -->
+        <div id="aiTab" class="tab-content active">
+            <div class="form-group">
+                <label>Gemini API Key (安全儲存於本機瀏覽器 LocalStorage):</label>
+                <div class="key-input-container">
+                    <input type="password" id="geminiKey" placeholder="貼上您的 Gemini API Key (AI Studio)...">
+                    <button class="save-key-btn" onclick="saveApiKey()">💾 儲存 Key</button>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>玩家身份 (截圖中左側 Win/Lose 屬於玩家的哪一方):</label>
+                <select id="playerSide">
+                    <option value="ATK">我是【攻擊方】(Left = 攻擊隊)</option>
+                    <option value="DEF">我是【防禦方】(Left = 防禦隊)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>選擇戰鬥報告截圖 (點擊或拖曳圖片至下方區域):</label>
+                <div class="drop-zone" onclick="document.getElementById('screenshotInput').click()" id="dropZone">
+                    <span>📷 點擊選擇圖片，或把截圖拖曳到這裡</span>
+                    <br><img id="previewImg" alt="預覽圖片">
+                    <input type="file" id="screenshotInput" accept="image/*" style="display:none;" onchange="handleFileSelect(event)">
+                </div>
+            </div>
+            <button class="action-btn" onclick="processImageWithAI()">🚀 開始 AI 辨識、比對名稱並上傳</button>
+        </div>
+
+        <!-- 分頁 2: 手動輸入 -->
+        <div id="manualTab" class="tab-content">
+            <h4>⚔️ 攻擊隊 (Attack)</h4>
+            <div class="grid-inputs">
+                <div class="grid-box atk"><h4>APos1</h4><input type="text" id="m_apos1" list="studentsDatalist" placeholder="輸入關鍵字..."></div>
+                <div class="grid-box atk"><h4>APos2</h4><input type="text" id="m_apos2" list="studentsDatalist" placeholder="輸入關鍵字..."></div>
+                <div class="grid-box atk"><h4>APos3</h4><input type="text" id="m_apos3" list="studentsDatalist" placeholder="輸入關鍵字..."></div>
+                <div class="grid-box atk"><h4>APos4</h4><input type="text" id="m_apos4" list="studentsDatalist" placeholder="輸入關鍵字..."></div>
+                <div class="grid-box atk"><h4>ASP1</h4><input type="text" id="m_asp1" list="studentsDatalist" placeholder="輸入關鍵字..."></div>
+                <div class="grid-box atk"><h4>ASP2</h4><input type="text" id="m_asp2" list="studentsDatalist" placeholder="輸入關鍵字..."></div>
+            </div>
+
+            <h4>🛡️ 防禦隊 (Defense)</h4>
+            <div class="grid-inputs">
+                <div class="grid-box def"><h4>DPos1</h4><input type="text" id="m_dpos1" list="studentsDatalist" placeholder="輸入關鍵字..."></div>
+                <div class="grid-box def"><h4>DPos2</h4><input type="text" id="m_dpos2" list="studentsDatalist" placeholder="輸入關鍵字..."></div>
+                <div class="grid-box def"><h4>DPos3</h4><input type="text" id="m_dpos3" list="studentsDatalist" placeholder="輸入關鍵字..."></div>
+                <div class="grid-box def"><h4>DPos4</h4><input type="text" id="m_dpos4" list="studentsDatalist" placeholder="輸入關鍵字..."></div>
+                <div class="grid-box def"><h4>DSP1</h4><input type="text" id="m_dsp1" list="studentsDatalist" placeholder="輸入關鍵字..."></div>
+                <div class="grid-box def"><h4>DSP2</h4><input type="text" id="m_dsp2" list="studentsDatalist" placeholder="輸入關鍵字..."></div>
+            </div>
+
+            <div class="form-group">
+                <label>對局結果:</label>
+                <select id="m_result">
+                    <option value="1">進攻勝利 (Win)</option>
+                    <option value="0">進攻失敗 (Lose)</option>
+                </select>
+            </div>
+            <button class="action-btn" onclick="submitManualData()">💾 校正並提交至雲端試算表</button>
+        </div>
+    </div>
+
+    <!-- 狀態列與表格 -->
+    <div class="panel status-bar">
+        <div>
             <b>資料來源：</b><span id="sourceStatus">連線中...</span> | 
             <b>最後更新：</b><span id="lastUpdated">-</span> | 
             <b>合流後對局總數：</b><span id="matchupCount">0</span>
         </div>
-        <button class="refresh-btn" onclick="fetchAndProcessData(true)">🔄 手動重新整理</button>
+        <button class="tab-btn" onclick="fetchAndProcessData(true)" style="margin:0;">🔄 重新整理表格</button>
     </div>
 
     <div class="table-container">
@@ -55,13 +148,13 @@
                     <th class="atk-header" onclick="sortTable(1)">APos2</th>
                     <th class="atk-header" onclick="sortTable(2)">APos3</th>
                     <th class="atk-header" onclick="sortTable(3)">APos4</th>
-                    <th class="atk-header" onclick="sortTable(4)">ASP 組合 (無視順序)</th>
+                    <th class="atk-header" onclick="sortTable(4)">ASP 組合</th>
                     
                     <th class="def-header" onclick="sortTable(5)">DPos1</th>
                     <th class="def-header" onclick="sortTable(6)">DPos2</th>
                     <th class="def-header" onclick="sortTable(7)">DPos3</th>
                     <th class="def-header" onclick="sortTable(8)">DPos4</th>
-                    <th class="def-header" onclick="sortTable(9)">DSP 組合 (無視順序)</th>
+                    <th class="def-header" onclick="sortTable(9)">DSP 組合</th>
                     
                     <th class="stat-header" onclick="sortTable(10)">總場次</th>
                     <th class="stat-header" onclick="sortTable(11)">進攻勝場</th>
@@ -69,124 +162,281 @@
                 </tr>
             </thead>
             <tbody id="tableBody">
-                <tr><td colspan="13" class="loading-text">⏳ 正在連線至雲端試算表並進行數據合流，請稍候...</td></tr>
+                <tr><td colspan="13" class="loading-text">⏳ 正在連線至雲端試算表並進行數據合流...</td></tr>
             </tbody>
         </table>
     </div>
 
     <script>
         // =========================================================
-        // 🔒 內嵌 Google 試算表 CSV 發布網址
-        // 請將下方字串替換為您從「發布到網路」取得的 CSV 網址
+        // 1. 學生資料庫詞庫 (支援關鍵字匹配與下拉選擇)
         // =========================================================
+        const STUDENTS = [
+            "椿", "星野", "水星野", "優香", "體育服優香", "瑪麗娜", "亞津子", "宮子", "水宮子", "艾莉絲", "女僕艾莉絲",
+            "伊呂波", "亞子", "渚", "日向", "水日向", "水阿魯", "阿魯", "睦月", "正月睦月", "佳代子", "正月佳代子",
+            "遙香", "伊織", "水伊織", "雛", "水雛", "禮服雛", "未花", "聖園未花", "鶴城", "水鶴城", "蓮實", "體育服蓮實",
+            "日富美", "水日富美", "梓", "水梓", "花子", "水花子", "小春", "水小春", "綠", "桃井", "柚子", "女僕柚子",
+            "花楓", "楓", "靜子", "水靜子", "泉奈", "水泉奈", "櫻子", "姬木", "神奈", "吹雪", "生活安全局", "咲",
+            "萌繪", "美遊", "體育服美遊", "千世", "水千世", "和香", "溫泉和香", "時", "兔女郎時", "飛鳥馬時", "晄輪大賽",
+            "芹香", "正月芹香", "綾音", "泳裝綾音", "茜", "兔女郎茜", "明日奈", "兔女郎明日奈", "花音", "芹奈", "聖誕芹奈"
+        ];
+
+        // 2. 雲端設定 (已更新 CSV 讀取網址與 Apps Script Web App 網址)
         const GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/17NTvWXCLHyS2Ay6iJWzyFhYfSa0ugDKe9kgTaHzkx4s/export?format=csv";
+        const GOOGLE_APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxXh_7BkB761GowfUvCBGY3jXcz7R6RVyEM_5rnUUY3Uhh_J86b2Kc1m_K6Az8GW1sY/exec";
 
         let currentData = [];
         let sortAscending = false;
 
-        // 頁面開啟時自動執行讀取
+        // 初始化頁面
         window.addEventListener('DOMContentLoaded', () => {
+            initDatalist();
+            loadSavedApiKey();
+            setupDragAndDrop();
             fetchAndProcessData();
         });
 
-        // 1. 自動讀取內嵌的 CSV 資料 (加入 Cache-Buster 確保每次皆抓取最新資料)
-        async function fetchAndProcessData(isManual = false) {
-            const tbody = document.getElementById('tableBody');
-            const statusElem = document.getElementById('sourceStatus');
-            
-            if (isManual) {
-                tbody.innerHTML = '<tr><td colspan="13" class="loading-text">🔄 正在重新拉取最新雲端數據...</td></tr>';
-            }
+        // 載入學生 Datalist
+        function initDatalist() {
+            const datalist = document.getElementById('studentsDatalist');
+            STUDENTS.forEach(student => {
+                const opt = document.createElement('option');
+                opt.value = student;
+                datalist.appendChild(opt);
+            });
+        }
 
-            if (!GOOGLE_SHEET_CSV_URL || GOOGLE_SHEET_CSV_URL.includes("YOUR_SPREADSHEET_ID_HERE")) {
-                tbody.innerHTML = '<tr><td colspan="13" style="color:red; padding:30px;">⚠️ 請先在 index.html 程式碼內的 <b>GOOGLE_SHEET_CSV_URL</b> 填入您的 Google 試算表 CSV 網址！</td></tr>';
-                statusElem.textContent = "未設定 CSV 網址";
-                return;
-            }
-
-            try {
-                // 加上時間戳記網址參數 (t=TIMESTAMP)，強制繞過瀏覽器與 CDN 快取，確保拿到最新雲端試算表資料
-                const fetchUrl = GOOGLE_SHEET_CSV_URL + (GOOGLE_SHEET_CSV_URL.includes('?') ? '&' : '?') + 't=' + new Date().getTime();
-                
-                const response = await fetch(fetchUrl, { cache: 'no-cache' });
-                if (!response.ok) throw new Error(`HTTP 錯誤! 狀態碼: ${response.status}`);
-                
-                const data = await response.arrayBuffer();
-                const workbook = XLSX.read(data, { type: 'array' });
-                const firstSheetName = workbook.SheetNames[0];
-                const rawRows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName]);
-
-                processAndAggregateData(rawRows);
-
-                // 更新狀態欄資訊
-                statusElem.textContent = "已連線至雲端試算表";
-                statusElem.style.color = "#137333";
-                document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString();
-
-            } catch (error) {
-                console.error(error);
-                tbody.innerHTML = `<tr><td colspan="13" style="color:red; padding:30px;">❌ 讀取失敗！請確認試算表已發布為 CSV，且網址正確。<br>詳細錯誤: ${error.message}</td></tr>`;
-                statusElem.textContent = "連線失敗";
-                statusElem.style.color = "#d93025";
+        // LocalStorage 安全儲存/讀取 API Key
+        function saveApiKey() {
+            const key = document.getElementById('geminiKey').value.trim();
+            if (key) {
+                localStorage.setItem('GEMINI_API_KEY_SECURE', key);
+                alert('🔒 API Key 已安全儲存於本機瀏覽器 LocalStorage！');
+            } else {
+                localStorage.removeItem('GEMINI_API_KEY_SECURE');
+                alert('已清除 API Key。');
             }
         }
 
-        // 2. 核心：隊伍與對局合流演算法
+        function loadSavedApiKey() {
+            const savedKey = localStorage.getItem('GEMINI_API_KEY_SECURE');
+            if (savedKey) {
+                document.getElementById('geminiKey').value = savedKey;
+            }
+        }
+
+        // 分頁切換
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            event.target.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        }
+
+        // 圖片拖曳與預覽
+        function setupDragAndDrop() {
+            const dropZone = document.getElementById('dropZone');
+            dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.background = '#eef4fc'; });
+            dropZone.addEventListener('dragleave', () => { dropZone.style.background = '#f8fafd'; });
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.style.background = '#f8fafd';
+                if (e.dataTransfer.files.length > 0) {
+                    document.getElementById('screenshotInput').files = e.dataTransfer.files;
+                    handleFileSelect({ target: { files: e.dataTransfer.files } });
+                }
+            });
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const img = document.getElementById('previewImg');
+                    img.src = e.target.result;
+                    img.style.display = 'block';
+                }
+                reader.readAsDataURL(file);
+            }
+        }
+
+        // =========================================================
+        // 3. AI 辨識 + 自動比對學生名稱校正演算法
+        // =========================================================
+        function findClosestStudentName(inputName) {
+            if (!inputName || inputName.trim() === "" || inputName === "-") return "-";
+            const cleanInput = inputName.trim();
+
+            if (STUDENTS.includes(cleanInput)) return cleanInput;
+
+            let bestMatch = cleanInput;
+            let maxScore = -1;
+
+            STUDENTS.forEach(student => {
+                let score = 0;
+                for (let char of cleanInput) {
+                    if (student.includes(char)) score += 1;
+                }
+                score = score - Math.abs(student.length - cleanInput.length) * 0.5;
+
+                if (score > maxScore) {
+                    maxScore = score;
+                    bestMatch = student;
+                }
+            });
+
+            return maxScore > 0 ? bestMatch : cleanInput;
+        }
+
+        async function processImageWithAI() {
+            const apiKey = document.getElementById('geminiKey').value.trim();
+            const fileInput = document.getElementById('screenshotInput');
+            
+            if (!apiKey) { alert('請輸入或儲存 Gemini API Key！'); return; }
+            if (!fileInput.files || fileInput.files.length === 0) { alert('請選擇或拖曳截圖圖片！'); return; }
+
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+
+            reader.onload = async function(e) {
+                const base64Data = e.target.result.split(',')[1];
+                alert('🤖 AI 正進行圖片辨識與學生名單比對中，請稍候約 3~5 秒...');
+
+                const prompt = `你是一個蔚藍檔案戰鬥報告分析器。分析圖片最下方的 12 位角色名字。
+                左邊 6 位是左隊，右邊 6 位是右隊。前 4 個是前排 (Pos1~Pos4)，後 2 個是支援 (SP1~SP2)。
+                參考學生詞庫：[${STUDENTS.join(',')}]。
+                請精確識別文字，並只回傳 JSON 格式：
+                {"left":["P1","P2","P3","P4","SP1","SP2"], "right":["P1","P2","P3","P4","SP1","SP2"], "left_win": 1或0}`;
+
+                try {
+                    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{
+                                parts: [
+                                    { text: prompt },
+                                    { inline_data: { mime_type: file.type, data: base64Data } }
+                                ]
+                            }]
+                        })
+                    });
+
+                    const jsonRes = await res.json();
+                    const rawText = jsonRes.candidates[0].content.parts[0].text;
+                    const cleanJson = JSON.parse(rawText.replace(/```json|```/g, '').trim());
+                    
+                    const sanitizeArray = (arr) => arr.map(name => findClosestStudentName(name));
+                    const leftTeam = sanitizeArray(cleanJson.left);
+                    const rightTeam = sanitizeArray(cleanJson.right);
+
+                    const isPlayerAtk = document.getElementById('playerSide').value === 'ATK';
+                    let payload = {};
+
+                    if (isPlayerAtk) {
+                        payload = {
+                            APos1: leftTeam[0], APos2: leftTeam[1], APos3: leftTeam[2], APos4: leftTeam[3],
+                            ASP1: leftTeam[4], ASP2: leftTeam[5],
+                            DPos1: rightTeam[0], DPos2: rightTeam[1], DPos3: rightTeam[2], DPos4: rightTeam[3],
+                            DSP1: rightTeam[4], DSP2: rightTeam[5],
+                            '總場次': 1, '進攻勝場': cleanJson.left_win === 1 ? 1 : 0
+                        };
+                    } else {
+                        payload = {
+                            APos1: rightTeam[0], APos2: rightTeam[1], APos3: rightTeam[2], APos4: rightTeam[3],
+                            ASP1: rightTeam[4], ASP2: rightTeam[5],
+                            DPos1: leftTeam[0], DPos2: leftTeam[1], DPos3: leftTeam[2], DPos4: leftTeam[3],
+                            DSP1: leftTeam[4], DSP2: leftTeam[5],
+                            '總場次': 1, '進攻勝場': cleanJson.left_win === 1 ? 0 : 1
+                        };
+                    }
+
+                    uploadToGoogleSheet(payload);
+                } catch (err) {
+                    alert('AI 辨識失敗，請確認 API Key 是否正確或圖片是否清晰: ' + err);
+                }
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function submitManualData() {
+            const getVal = (id) => findClosestStudentName(document.getElementById(id).value);
+
+            const payload = {
+                APos1: getVal('m_apos1'), APos2: getVal('m_apos2'), APos3: getVal('m_apos3'), APos4: getVal('m_apos4'),
+                ASP1: getVal('m_asp1'), ASP2: getVal('m_asp2'),
+                DPos1: getVal('m_dpos1'), DPos2: getVal('m_dpos2'), DPos3: getVal('m_dpos3'), DPos4: getVal('m_dpos4'),
+                DSP1: getVal('m_dsp1'), DSP2: getVal('m_dsp2'),
+                '總場次': 1,
+                '進攻勝場': Number(document.getElementById('m_result').value)
+            };
+
+            if (payload.APos1 === '-' || payload.DPos1 === '-') { alert('請至少輸入 APos1 與 DPos1 角色名稱！'); return; }
+            uploadToGoogleSheet(payload);
+        }
+
+        // =========================================================
+        // 4. Google Sheets API 讀寫與數據合流
+        // =========================================================
+        async function fetchAndProcessData(isManual = false) {
+            const tbody = document.getElementById('tableBody');
+            const statusElem = document.getElementById('sourceStatus');
+            if (isManual) tbody.innerHTML = '<tr><td colspan="13" class="loading-text">🔄 正在重新拉取最新雲端數據...</td></tr>';
+
+            try {
+                const fetchUrl = GOOGLE_SHEET_CSV_URL + (GOOGLE_SHEET_CSV_URL.includes('?') ? '&' : '?') + 't=' + new Date().getTime();
+                const response = await fetch(fetchUrl, { cache: 'no-cache' });
+                const data = await response.arrayBuffer();
+                const workbook = XLSX.read(data, { type: 'array' });
+                const rawRows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+
+                processAndAggregateData(rawRows);
+                statusElem.textContent = "已連線至雲端試算表";
+                statusElem.style.color = "#137333";
+                document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString();
+            } catch (error) {
+                tbody.innerHTML = `<tr><td colspan="13" style="color:red; padding:30px;">❌ 讀取失敗: ${error.message}</td></tr>`;
+                statusElem.textContent = "連線失敗";
+            }
+        }
+
         function processAndAggregateData(rows) {
             const aggregatedMap = new Map();
 
             rows.forEach(row => {
-                // --- 攻擊隊資料處理 ---
                 const apos1 = String(row['APos1'] || '-').trim();
                 const apos2 = String(row['APos2'] || '-').trim();
                 const apos3 = String(row['APos3'] || '-').trim();
                 const apos4 = String(row['APos4'] || '-').trim();
-                const asp1 = String(row['ASP1'] || '-').trim();
-                const asp2 = String(row['ASP2'] || '-').trim();
-                
-                // SP 號位：無視順序，字典排序後結合 (例如: "伊呂波 + 泳葉")
-                const sortedASP = [asp1, asp2].filter(name => name !== '-' && name !== '').sort().join(' + ') || '-';
+                const sortedASP = [String(row['ASP1']||'-').trim(), String(row['ASP2']||'-').trim()].filter(n => n!=='-'&&n!=='').sort().join(' + ') || '-';
 
-                // --- 防禦隊資料處理 ---
                 const dpos1 = String(row['DPos1'] || '-').trim();
                 const dpos2 = String(row['DPos2'] || '-').trim();
                 const dpos3 = String(row['DPos3'] || '-').trim();
                 const dpos4 = String(row['DPos4'] || '-').trim();
-                const dsp1 = String(row['DSP1'] || '-').trim();
-                const dsp2 = String(row['DSP2'] || '-').trim();
-                
-                // SP 號位：無視順序，字典排序後結合
-                const sortedDSP = [dsp1, dsp2].filter(name => name !== '-' && name !== '').sort().join(' + ') || '-';
+                const sortedDSP = [String(row['DSP1']||'-').trim(), String(row['DSP2']||'-').trim()].filter(n => n!=='-'&&n!=='').sort().join(' + ') || '-';
 
-                // --- 數據統計處理 ---
                 const gamesCount = Number(row['總場次']) || 1;
                 const winsCount = row['進攻勝場'] !== undefined ? Number(row['進攻勝場']) : 0;
 
-                // 生成獨一無二的對局 Key (1~4 號位順序嚴格，SP 無視順序)
-                const atkKey = `A:[${apos1},${apos2},${apos3},${apos4}]_ASP:[${sortedASP}]`;
-                const defKey = `D:[${dpos1},${dpos2},${dpos3},${dpos4}]_DSP:[${sortedDSP}]`;
-                const matchupKey = `${atkKey} VS ${defKey}`;
+                const matchupKey = `A:[${apos1},${apos2},${apos3},${apos4}]_[${sortedASP}] VS D:[${dpos1},${dpos2},${dpos3},${dpos4}]_[${sortedDSP}]`;
 
                 if (!aggregatedMap.has(matchupKey)) {
                     aggregatedMap.set(matchupKey, {
                         apos1, apos2, apos3, apos4, asp: sortedASP,
                         dpos1, dpos2, dpos3, dpos4, dsp: sortedDSP,
-                        totalGames: 0,
-                        wins: 0
+                        totalGames: 0, wins: 0
                     });
                 }
 
-                // 數據合流累加
                 const matchupData = aggregatedMap.get(matchupKey);
                 matchupData.totalGames += gamesCount;
                 matchupData.wins += winsCount;
             });
 
-            // 計算勝率並整理成列表
             currentData = Array.from(aggregatedMap.values()).map(item => {
-                const winRate = item.totalGames > 0 
-                    ? ((item.wins / item.totalGames) * 100).toFixed(1) 
-                    : "0.0";
+                const winRate = item.totalGames > 0 ? ((item.wins / item.totalGames) * 100).toFixed(1) : "0.0";
                 return { ...item, winRate: parseFloat(winRate) };
             });
 
@@ -194,61 +444,49 @@
             renderTable(currentData);
         }
 
-        // 3. 渲染表格畫面
         function renderTable(data) {
             const tbody = document.getElementById('tableBody');
             tbody.innerHTML = '';
-
-            if (data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="13" style="padding:30px;">📭 試算表中尚無資料。</td></tr>';
-                return;
-            }
+            if (data.length === 0) { tbody.innerHTML = '<tr><td colspan="13">📭 無資料</td></tr>'; return; }
 
             data.forEach(item => {
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
-                    <td><b>${item.apos1}</b></td>
-                    <td><b>${item.apos2}</b></td>
-                    <td><b>${item.apos3}</b></td>
-                    <td><b>${item.apos4}</b></td>
+                    <td><b>${item.apos1}</b></td><td><b>${item.apos2}</b></td><td><b>${item.apos3}</b></td><td><b>${item.apos4}</b></td>
                     <td class="sp-cell">${item.asp}</td>
-                    
-                    <td><b>${item.dpos1}</b></td>
-                    <td><b>${item.dpos2}</b></td>
-                    <td><b>${item.dpos3}</b></td>
-                    <td><b>${item.dpos4}</b></td>
+                    <td><b>${item.dpos1}</b></td><td><b>${item.dpos2}</b></td><td><b>${item.dpos3}</b></td><td><b>${item.dpos4}</b></td>
                     <td class="sp-cell">${item.dsp}</td>
-                    
-                    <td>${item.totalGames}</td>
-                    <td>${item.wins}</td>
-                    <td class="win-rate">${item.winRate}%</td>
+                    <td>${item.totalGames}</td><td>${item.wins}</td><td class="win-rate">${item.winRate}%</td>
                 `;
                 tbody.appendChild(tr);
             });
         }
 
-        // 4. 點擊欄位標題排序
+        async function uploadToGoogleSheet(payload) {
+            if (!GOOGLE_APPS_SCRIPT_URL || GOOGLE_APPS_SCRIPT_URL.includes("YOUR_APPS_SCRIPT_ID_HERE")) {
+                alert('⚠️ 尚未設定 GOOGLE_APPS_SCRIPT_URL！請填入 Apps Script Web App 網址。');
+                return;
+            }
+
+            try {
+                await fetch(GOOGLE_APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                alert('✅ 資料已成功校正並送出至雲端試算表！');
+                setTimeout(() => fetchAndProcessData(true), 1500);
+            } catch (err) {
+                alert('❌ 寫入失敗: ' + err);
+            }
+        }
+
         function sortTable(columnIndex) {
-            const keys = [
-                'apos1', 'apos2', 'apos3', 'apos4', 'asp',
-                'dpos1', 'dpos2', 'dpos3', 'dpos4', 'dsp',
-                'totalGames', 'wins', 'winRate'
-            ];
+            const keys = ['apos1','apos2','apos3','apos4','asp','dpos1','dpos2','dpos3','dpos4','dsp','totalGames','wins','winRate'];
             const key = keys[columnIndex];
-
             sortAscending = !sortAscending;
-
-            currentData.sort((a, b) => {
-                let valA = a[key];
-                let valB = b[key];
-
-                if (typeof valA === 'string') {
-                    return sortAscending ? valA.localeCompare(valB) : valB.localeCompare(valA);
-                } else {
-                    return sortAscending ? valA - valB : valB - valA;
-                }
-            });
-
+            currentData.sort((a,b) => (typeof a[key] === 'string') ? (sortAscending ? a[key].localeCompare(b[key]) : b[key].localeCompare(a[key])) : (sortAscending ? a[key]-b[key] : b[key]-a[key]));
             renderTable(currentData);
         }
     </script>
